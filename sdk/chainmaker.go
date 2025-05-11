@@ -521,7 +521,7 @@ func getCtxPtr() int32 {
 		LogMessage("failed to get ctx ptr")
 		return 0
 	} else {
-		ptr, err := strconv.ParseInt(str, 10, 32) //string转int32
+		ptr, err := strconv.ParseInt(str, 10, 32)
 		if err != nil {
 			LogMessage("get ptr err: " + err.Error())
 		}
