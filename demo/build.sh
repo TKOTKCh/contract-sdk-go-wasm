@@ -38,14 +38,14 @@ cd "$contractPath" || exit 1
 # 编译输出文件名
 outputName=""
 if [[ $buildOption == "tinygo" ]]; then
-  export GOROOT="/home/chenhang/WorkSpace/go-v1.23.7"
-  export PATH="$GOROOT/bin:$PATH"
+
+
   outputName="$contractName-tinygo.wasm"
   echo "[*] Using TinyGo to compile $contractName..."
   tinygo build -no-debug -opt=s -o "$outputName" -target=wasip1
 else
-  export GOROOT="/home/chenhang/WorkSpace/go-v1.24.1"
-  export PATH="$GOROOT/bin:$PATH"
+
+
   outputName="$contractName-go.wasm"
   echo "[*] Using Go to compile $contractName..."
   GOOS=wasip1 GOARCH=wasm go build -o "$outputName"
