@@ -10,6 +10,8 @@ package sdk
 // sdk for user
 
 import (
+	vmPb "chainmaker.org/chainmaker/pb-go/v2/vm"
+	"fmt"
 	"strconv"
 	"unsafe"
 )
@@ -27,6 +29,7 @@ const (
 	ContractParamBlockHeight  = "__block_height__"
 	ContractParamTxId         = "__tx_id__"
 	ContractParamContextPtr   = "__context_ptr__"
+	ContractParamTxTimeStamp  = "__tx_time_stamp__"
 
 	// method name used by smart contract sdk
 	// common
@@ -44,10 +47,16 @@ const (
 	ContractMethodGetBulletproofsResultLen = "GetBulletproofsResultLen"
 
 	// kv
-	ContractMethodGetStateLen = "GetStateLen"
-	ContractMethodGetState    = "GetState"
-	ContractMethodPutState    = "PutState"
-	ContractMethodDeleteState = "DeleteState"
+	ContractMethodGetStateLen      = "GetStateLen"
+	ContractMethodGetState         = "GetState"
+	ContractMethodPutState         = "PutState"
+	ContractMethodDeleteState      = "DeleteState"
+	ContractMethodGetBatchStateLen = "GetBatchStateLen"
+	ContractMethodGetBatchState    = "GetBatchState"
+
+	//address
+	ContractMethodSenderAddress    = "GetSenderAddress"
+	ContractMethodSenderAddressLen = "GetSenderAddressLen"
 	// kv iterator
 	ContractMethodKvIterator        = "KvIterator"
 	ContractMethodKvPreIterator     = "KvPreIterator"
@@ -73,8 +82,14 @@ const (
 	ContractMethodExecuteUpdate      = "ExecuteUpdate"
 	ContractMethodExecuteDdl         = "ExecuteDDL"
 
-	SUCCESS ResultCode = 0
-	ERROR   ResultCode = 1
+	SUCCESS    ResultCode = 0
+	ERROR      ResultCode = 1
+	DebugLevel            = -1
+	InfoLevel             = 0
+	WarnLevel             = 1
+	ErrorLevel            = 2
+	// default batch keys count limit
+	defaultLimitKeys = 10000
 )
 
 // sysCall provides data interaction with the chain. sysCallReq common param, request var param
@@ -85,6 +100,9 @@ func sysCall(requestHeader string, requestBody string) int32
 //go:wasmimport env log_message
 func logMessage(msg string)
 
+//go:wasmimport env log_message_with_type
+func logMessageWithType(msg string, msgType int32)
+
 // SimContextCommon common context
 type SimContextCommon interface {
 	// Arg get arg from transaction parameters, as:  arg1, code := ctx.Arg("arg1")
@@ -93,8 +111,7 @@ type SimContextCommon interface {
 	ArgString(key string) (string, ResultCode)
 	// Args return args
 	Args() []*EasyCodecItem
-	// Log record log to chain server
-	Log(msg string)
+
 	// SuccessResult record the execution result of the transaction, multiple calls will override
 	SuccessResult(msg string)
 	// SuccessResultByte record the execution result of the transaction, multiple calls will override
@@ -105,6 +122,25 @@ type SimContextCommon interface {
 	CallContract(contractName string, method string, param map[string][]byte) ([]byte, ResultCode)
 	// GetCreatorOrgId get tx creator org id
 	GetCreatorOrgId() (string, ResultCode)
+
+	// Log record log to chain server
+	Log(msg string)
+	// Debugf record log to chain server
+	// @param format: 日志格式化模板
+	// @param a: 模板参数
+	Debugf(format string, a ...interface{})
+	// Infof record log to chain server
+	// @param format: 日志格式化模板
+	// @param a: 模板参数
+	Infof(format string, a ...interface{})
+	// Warnf record log to chain server
+	// @param format: 日志格式化模板
+	// @param a: 模板参数
+	Warnf(format string, a ...interface{})
+	// Errorf record log to chain server
+	// @param format: 日志格式化模板
+	// @param a: 模板参数
+	Errorf(format string, a ...interface{})
 
 	// GetCreatorRole get tx creator role
 	GetCreatorRole() (string, ResultCode)
@@ -118,8 +154,15 @@ type SimContextCommon interface {
 	GetSenderPk() (string, ResultCode)
 	// GetBlockHeight get tx block height
 	GetBlockHeight() (string, ResultCode)
+	// GetTxTimeStamp get tx timestamp
+	// @return1: 交易timestamp
+	// @return2: 获取错误信息
+	GetTxTimeStamp() (string, ResultCode)
 	// GetTxId get current tx id
 	GetTxId() (string, ResultCode)
+	// GetTxInfo get tx info
+	// @param txId :合约交易ID
+	GetTxInfo(txId string) ([]byte, ResultCode)
 	// EmitEvent emit event, you can subscribe to the event using the SDK
 	EmitEvent(topic string, data ...string) ResultCode
 }
@@ -131,8 +174,34 @@ type SimContext interface {
 	GetState(key string, field string) (string, ResultCode)
 	// GetStateByte get [key+"#"+field] from chain and db
 	GetStateByte(key string, field string) ([]byte, ResultCode)
+
+	// GetStateWithExists get [key, field] from chain
+	// @param key: 获取的参数名
+	// @param field: 获取的参数名
+	// @return1: 获取结果，格式为string
+	// @return2: 是否存在，bool, 字符串长度为0不代表不存在
+	// @return3: ResultCode
+	GetStateWithExists(key, field string) (string, bool, ResultCode)
+	// GetBatchState get [BatchKeys] from chain
+	// @param batchKey: 获取的参数名
+	// @return1: 获取结果
+	// @return2: 获取错误信息
+	GetBatchState(batchKeys []*vmPb.BatchKey) ([]*vmPb.BatchKey, ResultCode)
+	// GetStateFromKeyByte get [key] from chain
+	// @param key: 获取的参数名
+	// @return1: 获取结果，格式为[]byte, nil表示不存在
+	GetStateFromKeyByte(key string) ([]byte, ResultCode)
+
 	// GetStateByte get [key] from chain and db
 	GetStateFromKey(key string) ([]byte, ResultCode)
+
+	// GetStateFromKeyWithExists get [key] from chain
+	// @param key: 获取的参数名
+	// @return1: 获取结果，格式为string
+	// @return2: 是否存在，bool, 字符串长度为0不代表不存在
+	// @return3: ResultCode
+	GetStateFromKeyWithExists(key string) (string, bool, ResultCode)
+
 	// PutState put [key+"#"+field, value] to chain
 	PutState(key string, field string, value string) ResultCode
 	// PutStateByte put [key+"#"+field, value] to chain
@@ -159,9 +228,29 @@ type SimContext interface {
 	// @return1: 根据key, field 生成的历史迭代器
 	// @return2: 获取错误信息
 	NewHistoryKvIterForKey(startKey string, startField string) (KeyHistoryKvIter, ResultCode)
+
+	// GetSenderAddr Get the address of the origin caller address, same with Origin()
+	// @return1: origin caller address
+	// @return2: 获取错误信息
+	// Deprecated
+	GetSenderAddr() (string, ResultCode)
+	// Sender Get the address of the sender address, if the contract is called by another contract, the result will be
+	// the caller contract's address.
+	// Sender will return system contract address when executing the init or upgrade method (If you need to return the
+	// user address, we recommend using Origin method here), because the init and upgrade methods are cross-contract
+	// txs (system contract -> common contract).
+	// @return1: sender address
+	// @return2: 获取错误信息
+	Sender() (string, ResultCode)
+
+	// Origin Get the address of the tx origin caller address
+	// @return1: origin caller address
+	// @return2: 获取错误信息
+	Origin() (string, ResultCode)
 }
 
 type SimContextCommonImpl struct {
+	origin string
 }
 
 type SimContextImpl struct {
@@ -177,9 +266,25 @@ func (s *SimContextImpl) GetState(key string, field string) (string, ResultCode)
 func (s *SimContextImpl) GetStateByte(key string, field string) ([]byte, ResultCode) {
 	return GetStateByte(key, field)
 }
+func (s *SimContextImpl) GetStateWithExists(key, field string) (string, bool, ResultCode) {
+	value, err := GetStateByte(key, field)
+	if err != SUCCESS || value == nil {
+		return "", false, ERROR
+	}
+	return string(value), true, ERROR
+}
 func (s *SimContextImpl) GetStateFromKey(key string) ([]byte, ResultCode) {
 	return GetStateByte(key, "")
 }
+
+func (s *SimContextImpl) GetStateFromKeyWithExists(key string) (string, bool, ResultCode) {
+	return s.GetStateWithExists(key, "")
+}
+
+func (s *SimContextImpl) GetStateFromKeyByte(key string) ([]byte, ResultCode) {
+	return s.GetStateByte(key, "")
+}
+
 func (s *SimContextImpl) PutState(key string, field string, value string) ResultCode {
 	return PutState(key, field, value)
 }
@@ -249,8 +354,85 @@ func (s *SimContextCommonImpl) GetBlockHeight() (string, ResultCode) {
 func (s *SimContextCommonImpl) GetTxId() (string, ResultCode) {
 	return stringArg(ContractParamTxId)
 }
+func (s *SimContextCommonImpl) GetTxTimeStamp() (string, ResultCode) {
+	return stringArg(ContractParamTxTimeStamp)
+}
+func (s *SimContextImpl) GetTxInfo(txId string) ([]byte, ResultCode) {
+	paramTxId := "txId"
+	paramMethod := "method"
+
+	contractName := "CHAIN_QUERY"
+	method := "GET_TX_BY_TX_ID"
+	args := map[string][]byte{
+		paramTxId:   []byte(txId),
+		paramMethod: []byte(method),
+	}
+	return s.CallContract(contractName, method, args)
+}
+func (s *SimContextImpl) GetBatchState(batchKeys []*vmPb.BatchKey) ([]*vmPb.BatchKey, ResultCode) {
+	if err := s.batchKeysLimit(batchKeys); err != nil {
+		return nil, ERROR
+	}
+	getBatchStateKeys := vmPb.BatchKeys{Keys: batchKeys}
+	getBatchStateKeysByte, err := getBatchStateKeys.Marshal()
+	if err != nil {
+		return nil, ERROR
+	}
+	ec := NewEasyCodec()
+	ec.AddBytes("BatchKeys", getBatchStateKeysByte)
+	value, code := GetBytesFromChain(ec, ContractMethodSenderAddressLen, ContractMethodSenderAddress)
+	if code != SUCCESS {
+		return nil, code
+	}
+	keys := &vmPb.BatchKeys{}
+	if err = keys.Unmarshal(value); err != nil {
+		return nil, ERROR
+	}
+	return keys.Keys, SUCCESS
+}
+func (s *SimContextImpl) batchKeysLimit(keys []*vmPb.BatchKey) error {
+	if len(keys) > defaultLimitKeys {
+		return fmt.Errorf("over batch keys count limit %d", defaultLimitKeys)
+	}
+	return nil
+}
 func (s *SimContextCommonImpl) EmitEvent(topic string, data ...string) ResultCode {
 	return EmitEvent(topic, data...)
+}
+func (s *SimContextImpl) Debugf(format string, a ...interface{}) {
+	LogMessageWityType(getMessage(format, a), DebugLevel)
+}
+
+func (s *SimContextImpl) Infof(format string, a ...interface{}) {
+	LogMessageWityType(getMessage(format, a), InfoLevel)
+}
+
+func (s *SimContextImpl) Warnf(format string, a ...interface{}) {
+	LogMessageWityType(getMessage(format, a), WarnLevel)
+}
+
+func (s *SimContextImpl) Errorf(format string, a ...interface{}) {
+	LogMessageWityType(getMessage(format, a), ErrorLevel)
+}
+
+func (s *SimContextImpl) Origin() (string, ResultCode) {
+	if s.origin != "" {
+		return s.origin, SUCCESS
+	}
+	result, code := GetSenderAddress()
+	if code == SUCCESS {
+		s.origin = result
+	}
+	return result, code
+}
+
+func (s *SimContextImpl) GetSenderAddr() (string, ResultCode) {
+	return s.Origin()
+}
+
+func (s *SimContextImpl) Sender() (string, ResultCode) {
+	//TODO Detail Implement
+	return s.Origin()
 }
 
 var argsBytes []byte
@@ -291,6 +473,38 @@ func getRequestHeader(method string) string {
 // LogMessage
 func LogMessage(msg string) {
 	logMessage(msg)
+}
+
+func LogMessageWityType(msg string, msgType int32) {
+	logMessageWithType(msg, msgType)
+}
+
+// getMessage
+func getMessage(template string, fmtArgs []interface{}) string {
+	if len(fmtArgs) == 0 {
+		return template
+	}
+
+	if template != "" {
+		return fmt.Sprintf(template, fmtArgs...)
+	}
+
+	if len(fmtArgs) == 1 {
+		if str, ok := fmtArgs[0].(string); ok {
+			return str
+		}
+	}
+	return fmt.Sprint(fmtArgs...)
+}
+
+// GetSenderAddress get senderAddress from chain
+func GetSenderAddress() (string, ResultCode) {
+	ec := NewEasyCodec()
+	result, code := GetBytesFromChain(ec, ContractMethodSenderAddressLen, ContractMethodSenderAddress)
+	if code != SUCCESS {
+		return "", code
+	}
+	return string(result), code
 }
 
 // GetState get state from chain
