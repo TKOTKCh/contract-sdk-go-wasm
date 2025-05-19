@@ -165,6 +165,24 @@ type SimContextCommon interface {
 	GetTxInfo(txId string) ([]byte, ResultCode)
 	// EmitEvent emit event, you can subscribe to the event using the SDK
 	EmitEvent(topic string, data ...string) ResultCode
+
+	// GetSenderAddr Get the address of the origin caller address, same with Origin()
+	// @return1: origin caller address
+	// @return2: 获取错误信息
+	GetSenderAddr() (string, ResultCode)
+	// Sender Get the address of the sender address, if the contract is called by another contract, the result will be
+	// the caller contract's address.
+	// Sender will return system contract address when executing the init or upgrade method (If you need to return the
+	// user address, we recommend using Origin method here), because the init and upgrade methods are cross-contract
+	// txs (system contract -> common contract).
+	// @return1: sender address
+	// @return2: 获取错误信息
+	Sender() (string, ResultCode)
+
+	// Origin Get the address of the tx origin caller address
+	// @return1: origin caller address
+	// @return2: 获取错误信息
+	Origin() (string, ResultCode)
 }
 
 // SimContext kv context
@@ -228,25 +246,6 @@ type SimContext interface {
 	// @return1: 根据key, field 生成的历史迭代器
 	// @return2: 获取错误信息
 	NewHistoryKvIterForKey(startKey string, startField string) (KeyHistoryKvIter, ResultCode)
-
-	// GetSenderAddr Get the address of the origin caller address, same with Origin()
-	// @return1: origin caller address
-	// @return2: 获取错误信息
-	// Deprecated
-	GetSenderAddr() (string, ResultCode)
-	// Sender Get the address of the sender address, if the contract is called by another contract, the result will be
-	// the caller contract's address.
-	// Sender will return system contract address when executing the init or upgrade method (If you need to return the
-	// user address, we recommend using Origin method here), because the init and upgrade methods are cross-contract
-	// txs (system contract -> common contract).
-	// @return1: sender address
-	// @return2: 获取错误信息
-	Sender() (string, ResultCode)
-
-	// Origin Get the address of the tx origin caller address
-	// @return1: origin caller address
-	// @return2: 获取错误信息
-	Origin() (string, ResultCode)
 }
 
 type SimContextCommonImpl struct {
@@ -303,6 +302,33 @@ func (s *SimContextImpl) DeleteState(key string, field string) ResultCode {
 func (s *SimContextImpl) DeleteStateFromKey(key string) ResultCode {
 	return DeleteState(key, "")
 }
+func (s *SimContextImpl) GetBatchState(batchKeys []*vmPb.BatchKey) ([]*vmPb.BatchKey, ResultCode) {
+	if err := s.batchKeysLimit(batchKeys); err != nil {
+		return nil, ERROR
+	}
+	getBatchStateKeys := vmPb.BatchKeys{Keys: batchKeys}
+	getBatchStateKeysByte, err := getBatchStateKeys.Marshal()
+	if err != nil {
+		return nil, ERROR
+	}
+	ec := NewEasyCodec()
+	ec.AddBytes("BatchKeys", getBatchStateKeysByte)
+	value, code := GetBytesFromChain(ec, ContractMethodSenderAddressLen, ContractMethodSenderAddress)
+	if code != SUCCESS {
+		return nil, code
+	}
+	keys := &vmPb.BatchKeys{}
+	if err = keys.Unmarshal(value); err != nil {
+		return nil, ERROR
+	}
+	return keys.Keys, SUCCESS
+}
+func (s *SimContextImpl) batchKeysLimit(keys []*vmPb.BatchKey) error {
+	if len(keys) > defaultLimitKeys {
+		return fmt.Errorf("over batch keys count limit %d", defaultLimitKeys)
+	}
+	return nil
+}
 
 // common
 func (s *SimContextCommonImpl) Arg(key string) ([]byte, ResultCode) {
@@ -357,7 +383,7 @@ func (s *SimContextCommonImpl) GetTxId() (string, ResultCode) {
 func (s *SimContextCommonImpl) GetTxTimeStamp() (string, ResultCode) {
 	return stringArg(ContractParamTxTimeStamp)
 }
-func (s *SimContextImpl) GetTxInfo(txId string) ([]byte, ResultCode) {
+func (s *SimContextCommonImpl) GetTxInfo(txId string) ([]byte, ResultCode) {
 	paramTxId := "txId"
 	paramMethod := "method"
 
@@ -369,53 +395,27 @@ func (s *SimContextImpl) GetTxInfo(txId string) ([]byte, ResultCode) {
 	}
 	return s.CallContract(contractName, method, args)
 }
-func (s *SimContextImpl) GetBatchState(batchKeys []*vmPb.BatchKey) ([]*vmPb.BatchKey, ResultCode) {
-	if err := s.batchKeysLimit(batchKeys); err != nil {
-		return nil, ERROR
-	}
-	getBatchStateKeys := vmPb.BatchKeys{Keys: batchKeys}
-	getBatchStateKeysByte, err := getBatchStateKeys.Marshal()
-	if err != nil {
-		return nil, ERROR
-	}
-	ec := NewEasyCodec()
-	ec.AddBytes("BatchKeys", getBatchStateKeysByte)
-	value, code := GetBytesFromChain(ec, ContractMethodSenderAddressLen, ContractMethodSenderAddress)
-	if code != SUCCESS {
-		return nil, code
-	}
-	keys := &vmPb.BatchKeys{}
-	if err = keys.Unmarshal(value); err != nil {
-		return nil, ERROR
-	}
-	return keys.Keys, SUCCESS
-}
-func (s *SimContextImpl) batchKeysLimit(keys []*vmPb.BatchKey) error {
-	if len(keys) > defaultLimitKeys {
-		return fmt.Errorf("over batch keys count limit %d", defaultLimitKeys)
-	}
-	return nil
-}
+
 func (s *SimContextCommonImpl) EmitEvent(topic string, data ...string) ResultCode {
 	return EmitEvent(topic, data...)
 }
-func (s *SimContextImpl) Debugf(format string, a ...interface{}) {
+func (s *SimContextCommonImpl) Debugf(format string, a ...interface{}) {
 	LogMessageWityType(getMessage(format, a), DebugLevel)
 }
 
-func (s *SimContextImpl) Infof(format string, a ...interface{}) {
+func (s *SimContextCommonImpl) Infof(format string, a ...interface{}) {
 	LogMessageWityType(getMessage(format, a), InfoLevel)
 }
 
-func (s *SimContextImpl) Warnf(format string, a ...interface{}) {
+func (s *SimContextCommonImpl) Warnf(format string, a ...interface{}) {
 	LogMessageWityType(getMessage(format, a), WarnLevel)
 }
 
-func (s *SimContextImpl) Errorf(format string, a ...interface{}) {
+func (s *SimContextCommonImpl) Errorf(format string, a ...interface{}) {
 	LogMessageWityType(getMessage(format, a), ErrorLevel)
 }
 
-func (s *SimContextImpl) Origin() (string, ResultCode) {
+func (s *SimContextCommonImpl) Origin() (string, ResultCode) {
 	if s.origin != "" {
 		return s.origin, SUCCESS
 	}
@@ -426,11 +426,11 @@ func (s *SimContextImpl) Origin() (string, ResultCode) {
 	return result, code
 }
 
-func (s *SimContextImpl) GetSenderAddr() (string, ResultCode) {
+func (s *SimContextCommonImpl) GetSenderAddr() (string, ResultCode) {
 	return s.Origin()
 }
 
-func (s *SimContextImpl) Sender() (string, ResultCode) {
+func (s *SimContextCommonImpl) Sender() (string, ResultCode) {
 	//TODO Detail Implement
 	return s.Origin()
 }
