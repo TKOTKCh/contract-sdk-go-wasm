@@ -1,7 +1,2 @@
 chainmaker sdk for go wasm
-编译方式
-```sh
-cd demo
-./build.sh <contractName> go
-```
-请使用1.24.1以上go版本
+示例合约见仓库[TKOTKCh/contracts-go-wasm](https://github.com/TKOTKCh/contracts-go-wasm)
