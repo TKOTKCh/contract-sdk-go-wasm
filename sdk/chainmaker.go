@@ -439,7 +439,7 @@ func (s *SimContextCommonImpl) Sender() (string, ResultCode) {
 }
 
 // TODO 原本sdk对于参数的实现方法是在实例内用全局变量，由于vm-wasmer用的vm-pool同一个合约用的一个实例，在并发情况下可能有问题
-// TODO 现在修改成从链上获取，待检查,暂时注释掉allocate、deallocate两个跟参数相关的接口
+// TODO 现在修改成从链上获取，待检查,暂时注释掉allocate、deallocate两个跟参数读取相关的接口
 //var argsBytes []byte
 //var argsMap []*EasyCodecItem
 //var argsFlag bool
