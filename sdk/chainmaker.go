@@ -39,9 +39,6 @@ const (
 	ContractMethodCallContract    = "CallContract"
 	ContractMethodCallContractLen = "CallContractLen"
 	ContractMethodEmitEvent       = "EmitEvent"
-	ContractMethodArg             = "GetArgs"
-	ContractMethodArgLen          = "GetArgsLen"
-
 	// paillier
 	ContractMethodGetPaillierOperationResult    = "GetPaillierOperationResult"
 	ContractMethodGetPaillierOperationResultLen = "GetPaillierOperationResultLen"
@@ -438,34 +435,32 @@ func (s *SimContextCommonImpl) Sender() (string, ResultCode) {
 	return s.Origin()
 }
 
-// TODO 原本sdk对于参数的实现方法是在实例内用全局变量，由于vm-wasmer用的vm-pool同一个合约用的一个实例，在并发情况下可能有问题
-// TODO 现在修改成从链上获取，待检查,暂时注释掉allocate、deallocate两个跟参数读取相关的接口
-//var argsBytes []byte
-//var argsMap []*EasyCodecItem
-//var argsFlag bool
+var argsBytes []byte
+var argsMap []*EasyCodecItem
+var argsFlag bool
 
 //go:wasmexport runtime_type
 func runtimeType() int32 {
 	var ContractRuntimeGoSdkType int32 = 4
-	//argsFlag = false
+	argsFlag = false
 	return ContractRuntimeGoSdkType
 }
 
-////go:wasmexport deallocate
-//func deallocate(size int32) {
-//	argsBytes = make([]byte, size)
-//	argsMap = make([]*EasyCodecItem, 0)
-//	argsFlag = false
-//}
-//
-////go:wasmexport allocate
-//func allocate(size int32) uintptr {
-//	argsBytes = make([]byte, size)
-//	argsMap = make([]*EasyCodecItem, 0)
-//	argsFlag = false
-//
-//	return uintptr(unsafe.Pointer(&argsBytes[0]))
-//}
+//go:wasmexport deallocate
+func deallocate(size int32) {
+	argsBytes = make([]byte, size)
+	argsMap = make([]*EasyCodecItem, 0)
+	argsFlag = false
+}
+
+//go:wasmexport allocate
+func allocate(size int32) uintptr {
+	argsBytes = make([]byte, size)
+	argsMap = make([]*EasyCodecItem, 0)
+	argsFlag = false
+
+	return uintptr(unsafe.Pointer(&argsBytes[0]))
+}
 
 func getRequestHeader(method string) string {
 	ec := NewEasyCodec()
@@ -748,37 +743,19 @@ func getCtxPtr() int32 {
 	}
 }
 
-//func getArgsMap() error {
-//	if !argsFlag {
-//		argsMap = EasyUnmarshal(argsBytes)
-//		argsFlag = true
-//	}
-//	return nil
-//}
-
-// TODO 新的从链上读取参数的实现，待检查
-func getArgsMap() ([]*EasyCodecItem, error) {
-	// # get len
-	// ## prepare param
-	var argsMap []*EasyCodecItem
-	ec := NewEasyCodec()
-	argsBytes, code := GetBytesFromChain(ec, ContractMethodArgLen, ContractMethodArg)
-	if code != SUCCESS {
-		return nil, fmt.Errorf("get arg from chain error")
+func getArgsMap() error {
+	if !argsFlag {
+		argsMap = EasyUnmarshal(argsBytes)
+		argsFlag = true
 	}
-	if len(argsBytes) > 0 {
-		return nil, fmt.Errorf("args len is 0")
-	}
-	argsMap = EasyUnmarshal(argsBytes)
-	return argsMap, nil
+	return nil
 }
-
 func stringArg(key string) (string, ResultCode) {
 	result, code := Arg(key)
 	return string(result), code
 }
 func Arg(key string) ([]byte, ResultCode) {
-	argsMap, err := getArgsMap()
+	err := getArgsMap()
 	if err != nil {
 		LogMessage("get Arg error:" + err.Error())
 		return nil, ERROR
@@ -791,7 +768,7 @@ func Arg(key string) ([]byte, ResultCode) {
 	return nil, ERROR
 }
 func ArgString(key string) (string, ResultCode) {
-	argsMap, err := getArgsMap()
+	err := getArgsMap()
 	if err != nil {
 		LogMessage("get Arg error:" + err.Error())
 		return "", ERROR
@@ -805,7 +782,7 @@ func ArgString(key string) (string, ResultCode) {
 }
 
 func Args() []*EasyCodecItem {
-	argsMap, err := getArgsMap()
+	err := getArgsMap()
 	if err != nil {
 		LogMessage("get Args error:" + err.Error())
 	}
