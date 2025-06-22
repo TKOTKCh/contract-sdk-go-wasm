@@ -39,8 +39,8 @@ const (
 	ContractMethodCallContract    = "CallContract"
 	ContractMethodCallContractLen = "CallContractLen"
 	ContractMethodEmitEvent       = "EmitEvent"
-	ContractMethodArg             = "Arg"
-	ContractMethodArgLen          = "ArgLen"
+	ContractMethodArg             = "GetArg"
+	ContractMethodArgLen          = "GetArgLen"
 
 	// paillier
 	ContractMethodGetPaillierOperationResult    = "GetPaillierOperationResult"
